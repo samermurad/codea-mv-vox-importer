@@ -3,7 +3,7 @@
 -- Use this function to perform your initial setup
 function setup() 
     --dir = os.getenv("PWD") or os.execute("pwd"):read()
-    local path = os.getenv("HOME").."/Documents/MagicalVoxelVoxImporter.codea/"
+    local path = os.getenv("HOME").."/Documents/MVVoxImporter.codea/"
     print(path)
     scene = craft.scene()
     scene.sky.active = true
