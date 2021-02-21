@@ -34,22 +34,193 @@ DEFAULT_PALETTE = {0x00000000, 0xffffffff, 0xffccffff, 0xff99ffff, 0xff66ffff, 0
 0xff880000, 0xff770000, 0xff550000, 0xff440000, 0xff220000, 0xff110000, 0xffeeeeee, 0xffdddddd,
 0xffbbbbbb, 0xffaaaaaa, 0xff888888, 0xff777777, 0xff555555, 0xff444444, 0xff222222, 0xff111111}
 
+function voxUtil.openFile(filePath)
+    return assert(io.open(filePath, 'rb'))
+end
 
+function voxUtil.readString(buffer, chunkSize)
+    local chunk = buffer:read(4)
+    local strLn = struct.unpack('<i', chunk)
+    local readB = 4
+    local str = ''
+    chunk = buffer:read(strLn)
+    readB = readB + strLn
+    str = struct.unpack('<c' .. strLn, chunk)
+    print('string: ', str, ', read: ', readB)
+    return str, readB
+end
 
-function voxUtil.importSync(opt)
+function voxUtil.readDictKeyCount(buffer)
+    local chunk = buffer:read(4)
+    local keyCount = struct.unpack('<i', chunk)
+    print( 'DICT count: ', keyCount)
+    return keyCount, 4
+end
+function voxUtil.readDict(buffer, chunkSize)
+    local cSize = chunkSize
+    local dictKeyCount, readBytes = voxUtil.readDictKeyCount(buffer)
+    cSize = cSize - readBytes
+    local dict = {}
+    if dictKeyCount == 0 then
+        print('empty dict')
+        return dict, readBytes
+    else
+        for i = 1, dictKeyCount, 1 do
+            local key, readK = voxUtil.readString(buffer, cSize)
+            cSize = cSize - readK
+            local val, readV = voxUtil.readString(buffer, cSize)
+            cSize = cSize - readV
+            dict[key] = val
+            print('DICT - key: ', key, ' value: ', val)
+        end
+    end
+    print(' DICT: read ', chunkSize - cSize, 'bytes')
+    return dict, chunkSize - cSize
+end
+
+function voxUtil.readSize(buffer)
+    local chunk = buffer:read(12)
+    x, z, y = struct.unpack('<iii', chunk)
+    return x, y, z
+end
+function voxUtil.readRGBA(buffer)
+    local palette = {}
+    for col = 0, 255 do
+        local chunk = buffer:read(4)
+        local r, g, b, a = struct.unpack('<BBBB', chunk)
+        palette[col + 1] = color(r,g,b,a)
+    end
+    return palette
+end
+function voxUtil.loadDefaultPalette()
+    local palette = {}
+    for col = 0, 255 do
+        local chunk = struct.pack('<I', DEFAULT_PALETTE[col + 1])
+        local r, g, b, a = struct.unpack('<BBBB', chunk)
+        palette[col + 1] = color(r,g,b,a)
+    end
+    return palette
+    --  struct.unpack('<4B', struct.pack('<I', DEFAULT_PALETTE[col]
+end
+
+function voxUtil.readCoords(buffer)
+    local chunk = buffer:read(4)
+    local nVox = struct.unpack('<i', chunk)
+    local voxels = {}
+    for voxel = 1, nVox, 1 do
+        chunk = buffer:read(4)
+        local x, z, y, colIdx = struct.unpack('<BBBB', chunk)
+        local voxel = {
+        coords = vec3(x,y,z),
+        colIdx = colIdx
+        }
+        table.insert(
+        voxels,
+        voxel
+        )
+    end
+    return voxels
+end
+
+function voxUtil.readTransform(buffer, chunkSize)
+    local chunk = buffer:read(4)
+    local cSize = chunkSize - 4
+    assert(type(cSize) == 'number')
+    local nodeId = struct.unpack('<i', chunk)
+    local attr, readAttr = voxUtil.readDict(buffer, cSize)
+    cSize = cSize - readAttr
+    chunk = buffer:read(16)
+    cSize = cSize - 16
+    
+    local childId, rId, layerId, nFrames = struct.unpack('<iiii', chunk)
+    
+    -- discard frames dict
+    local frames, readFrames = voxUtil.readDict(buffer, cSize)
+    cSize = cSize - readFrames
+    print('discard frames dict ', cSize)
+    buffer:read(cSize)
+ --   id, nodeId, rId, layerId, nFrames
+    return MVTransform{
+        nodeId = nodeId,
+        nodeAttr = attr,
+        childNodeId = childId,
+        reversedId = rId,
+        layerId = layerId,
+        numFrames = nFrames,
+        frames = frames
+    }
+
+end
+
+function voxUtil.readNodeGroup(buffer, chunkSize)
+    print('skipping group', chunkSize)
+    return buffer:read(chunkSize)
+    --[[
+    local chunk = buffer:read(4)
+    local cSize = chunkSize - 4
+    local nodeId = struct.unpack('<i', chunk)
+    local dictKeyCount = voxUtil.readDictKeyCount(buffer)
+    cSize = cSize - 4 
+    if dictKeyCount == 0 then
+        buffer:read(4)
+    else
+        for i = 1, dictKeyCount, 1 do
+            local key, readK = voxUtil.readString(buffer, chunkSize)
+            local val, readV = voxUtil.readString(buffer, chunkSize)
+            print('GRP: key ', key, 'value', value)
+        end
+    end
+    local nChild = struct.unpack('<i',buffer:read(4))
+    cSize = cSize - 4 
+    -- discard children nodes
+    buffer:read(cSize)
+    return nodeId, dict , nChild
+    ]]--
+end
+function voxUtil.readMaterial(buffer, chunkSize)
+    -- Method not fully implemented
+    -- doesnt produce anything useful yet
+    local chunk = buffer:read(12)
+    local matt_id, mat_type, weight = struct.unpack('<Bif', chunk)
+    chunk = buffer:read(4)
+    local propBits = struct.unpack('<i', chunk)
+    --[[
+    Need to read property values, but this gets fiddly
+    # TODO: finish implementation
+    # We have read 16 bytes of this chunk so far, ignoring remainder
+    --]]
+    buffer.read(chunkSize - 16)
+    return matt_id, mat_type, weight, propBits
+    
+end
+
+function voxUtil.processVoxFile(opt)
+    -- props
     opt = opt or {}
     local filePath = assert(opt.filePath, 'must provide filePath')
     local spacing = opt.spacing or 1
     local size = opt.size or 1
     local loadFrame = opt.loadFrame or 0
+    local useDefaultPalette = opt.useDefaultPalette or false
     
+    -- debug
+    local verbose = opt.debug or false
+    local function dLog(...)
+        if verbose then
+            print(...)
+        end
+    end
+    ---
     local buffer = voxUtil.openFile(filePath)
     
-    
-    local voxels = {}
-    local palette = {}
+    local volumes = {}
+    local voxels = nil
+    local palette = nil
+    local transforms = {}
     local currentFrame = 0
-    -- assert is VOX 150 file
+    local x, y, z = 0,0,0
+    local nModels = 0
+    -- assert is VOX 150 fil()e
     local chunk = buffer:read(8)
     local VOX_,version = struct.unpack('<c4i', chunk)
     assert(
@@ -62,78 +233,119 @@ function voxUtil.importSync(opt)
     assert(struct.unpack('<c4',chunk) == 'MAIN')
     chunk = buffer:read(8)
     local N, M = struct.unpack('<ii', chunk)
-    print('M ', M)
+    dLog('Content Size ', M)
     assert (N == 0, 'MAIN chunk should have no content')
-    local num_models = 0
-    local x, y, z = 0,0,0
+    
+    
     while true do
+        -- read header
         chunk = buffer:read(12)
-        --print('next chunk ', chunk)
         if chunk == nil then break end -- end of file
-        local name, s_self, s_child = struct.unpack('<c4ii', chunk)
-        print(name, s_self, s_child)
-        assert(s_child == 0, 's_child == 0')
         
-        if name == 'PACK' then
+        local chunkName, chunkSize, childSize = struct.unpack('<c4ii', chunk)
+        dLog(
+        string.format(
+        [[ chunkName: %s,  size: %d, childSize: %d]],
+        chunkName, chunkSize, childSize
+        )
+        )
+        assert(childSize == 0, 'broken pipe') -- sanity check
+        
+        if chunkName == 'PACK' then
             -- number of models
             chunk = buffer:read(4)
-            num_models,wot = struct.unpack('<i', chunk)
-            print(num_models, wot)
+            nModels = struct.unpack('<i', chunk)
+            print('nModels',nModels, wot)
             -- clamp load_frame to total number of frames
-            loadFrame = math.min(loadFrame, num_models)
-        elseif name == 'SIZE' then
+            loadFrame = math.min(loadFrame, nModels)
+            
+        elseif chunkName == 'SIZE' then
             -- model size
-            chunk = buffer:read(12)
-            x, y, z = struct.unpack('<iii', chunk)
-            print('xyz', x, y, z)
-        elseif name == 'XYZI' then
+            -- add new volume 
+            
+            x, y, z = voxUtil.readSize(buffer)
+            local vol = {
+                size = {
+                    x = x,
+                    y = y,
+                    z = z
+                }
+            }
+            table.insert(volumes, vol)
+            dLog('x: ', x, 'y: ', y, 'z: ', z)
+            
+        elseif chunkName == 'XYZI' then
+            -- coords
             if currentFrame == loadFrame then
-                chunk = buffer:read(4)
-                local nVox = struct.unpack('<i', chunk)
-                print('voxels count', nVox)
-                for voxel = 1, nVox, 1 do
-                    chunk = buffer:read(4)
-                    print('voxel', vec4(struct.unpack('<BBBB', chunk)))
-                    table.insert(
-                        voxels, 
-                        vec4(struct.unpack('<BBBB', chunk))
-                    )
-                end
+                voxels = voxUtil.readCoords(buffer)
+                dLog('found and loaded ', #voxels, ' Voxels')
+                volumes[#volumes].voxels = voxels
             else
                 print('Skipping voxels in frame', currentFrame)
-                chunk = buffer:read(s_self)
+                chunk = buffer:read(chunkSize)
             end
-        elseif name == 'RGBA' then
+            
+        elseif chunkName == 'RGBA' then
             -- palette
-            for col = 0, 255 do
-                chunk = buffer:read(4)
-                local r, g, b, a = struct.unpack('<BBBB', chunk)
-                print('rgba', r, g, b, a)
-                palette[col + 1] = vec4(r,g,b,a)
-            end
-        elseif name == 'MATT' then
+            dLog('found custom palette, loading it')
+            palette = voxUtil.readRGBA(buffer)
+        elseif chunkName == 'MATT' then
             -- material
-            chunk = buffer:read(12)
-            local matt_id, mat_type, weight = struct.unpack('<Bif', chunk)
-            print( 'MATT', matt_id, mat_type, weight)
-            chunk = buffer:read(4)
-            local propBits = struct.unpack('<i', chunk)
-            --[[
-            Need to read property values, but this gets fiddly
-            # TODO: finish implementation
-            # We have read 16 bytes of this chunk so far, ignoring remainder
-            --]]
-            buffer.read(s_self - 16)
+            local matId, mType, mWeight, propBits = voxUtil.readMaterial(buffer, chunkSize)
+            dLog(
+            string.format(
+            [[
+            Material, Id: %d, type: %d, weight: %d, prop: %d
+            ]],
+            matId, mType,mWeight,propBits
+            )
+            )
+     elseif chunkName == 'nTRN' then
+         dLog(voxUtil.readTransform(buffer, chunkSize))
+        elseif chunkName == 'nGRP' then
+        dLog('Group: ', voxUtil.readNodeGroup(buffer, chunkSize))
         else
-            chunk = buffer:read(s_self)
-            print(name .. ' not implemented, skipping')
+            chunk = buffer:read(chunkSize)
+            print(chunkName .. ' not implemented, skipping')
         end
-        
+        dLog('======')
     end
     
+    if not useDefaultPalette then
+        assert(palette ~= nil, 'no palette provided with file, set useDefaultPalette to true to use defalut palette')
+    else
+        palette = voxUtil.loadDefaultPalette()
+    end
+    
+    assert(#volumes > 0, 'failed to load voxels')
+    return {
+    size = vec3(x, y, z),
+    volumes = volumes,
+    palette = palette,
+    nModels = nModels
+    }
 end
 
-function voxUtil.openFile(filePath)
-    return assert(io.open(filePath, 'rb'))
-end
 
+function voxUtil.loadVox(entity, filePath)
+    local res = voxUtil.processVoxFile{
+        filePath = filePath,
+        debug = true
+    }
+    
+   -- volume:resize(res.size.x, res.size.y, res.size.z)
+    local e = scene:entity()
+    e.parent = entity
+    for i, vol in ipairs(res.volumes) do
+        local vSize = vol.size
+        print(vSize.x, vSize.y, vSize.z)
+        local ie = scene:entity()
+        ie.parent = e
+        local obj = ie:add(craft.volume, vSize.x, vSize.y, vSize.z)
+        for j, v in ipairs(vol.voxels) do
+            local x, y, z = v.coords:unpack()
+            local col = res.palette[v.colIdx]
+            obj:set(x, y, z, 'name', 'solid', 'color', col)
+        end
+    end
+end
