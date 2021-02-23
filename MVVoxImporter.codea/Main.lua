@@ -12,11 +12,13 @@ function setup()
    -- local asst = path .. './snd.vox'
  --   local asst = path .. './sndScene.vox'
  -- local asst = path .. './MagicSword.vox'
-    local asst = path .. './Houses.vox'
+   -- local asst = path .. './Houses.vox'
    -- local asst = path .. './BrawlStars.vox'
  --   local asst = path .. './Blocks.vox.vox'
     --local asst = path .. './rot.vox'
-  --  local asst = path .. './chr_fox.vox'
+--  local asst = path .. './chr_fox.vox'
+-- local asst = path .. './Pack.vox'
+    local asst = path .. './TRex.vox'
    -- local asst = path .. './monu6-without-water.vox'
     local e = scene:entity()
   --  local v = e:add(craft.volume, 10, 10, 10)
@@ -25,16 +27,18 @@ function setup()
     
  --   v:set(1,1,1, 'name', 'solid', 'color', color(233, 80, 212))
     voxUtil.loadVox(e, asst)
-    loader = VoxLoader()
+    --loader = VoxLoader()
+    --[[
     loader:load{
         filePath = asst,
         debug = true
     }
+    ]]
 end
 
 -- This function gets called once every frame
 function draw()
-    loader:tick()
+    --loader:tick()
     scene:update(DeltaTime)
     scene:draw()
 end

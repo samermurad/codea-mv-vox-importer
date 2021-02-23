@@ -92,12 +92,15 @@ function VoxLoader:process(opt)
             coroutine.yield(VL_ERROR, 'broken pipeline, file might be corrupted')
             return 
         end
+        
 
         chunk = buffer:read(chunkSize)
         print(chunkName .. ' not implemented, skipping')
     end
     
     coroutine.yield(VL_PROCESSING)
+
+    
 end
 
 function VoxLoader:runThread(data)

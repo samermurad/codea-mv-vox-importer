@@ -201,7 +201,7 @@ function voxUtil.readMaterial(buffer, chunkSize)
     # TODO: finish implementation
     # We have read 16 bytes of this chunk so far, ignoring remainder
     --]]
-    buffer.read(chunkSize - 16)
+    buffer:read(chunkSize - 16)
     return matt_id, mat_type, weight, propBits
     
 end
@@ -305,7 +305,7 @@ function voxUtil.processVoxFile(opt)
             print('nModels',nModels, wot)
             -- clamp load_frame to total number of frames
             loadFrame = math.min(loadFrame, nModels)
-            
+
         elseif chunkName == 'SIZE' then
             -- model size
             -- add new volume 
