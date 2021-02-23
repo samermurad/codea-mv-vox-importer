@@ -35,7 +35,7 @@ DEFAULT_PALETTE = {0x00000000, 0xffffffff, 0xffccffff, 0xff99ffff, 0xff66ffff, 0
 0xffbbbbbb, 0xffaaaaaa, 0xff888888, 0xff777777, 0xff555555, 0xff444444, 0xff222222, 0xff111111}
 
 function voxUtil.openFile(filePath)
-    return assert(io.open(filePath, 'rb'))
+    return io.open(filePath, 'rb')
 end
 
 function voxUtil.readString(buffer, chunkSize)
@@ -92,6 +92,19 @@ function voxUtil.readRGBA(buffer)
     end
     return palette
 end
+
+function voxUtil.createRGBAIteratorReader(buffer)
+    local col = 0
+    local num = 255
+    return function()
+        col = col + 1
+        if col <= num then 
+            local chunk = buffer:read(4)
+            local r, g, b, a = struct.unpack('<BBBB', chunk)
+            return color(r,g,b,a)
+        end
+    end
+end
 function voxUtil.loadDefaultPalette()
     local palette = {}
     for col = 0, 255 do
@@ -139,7 +152,6 @@ function voxUtil.readTransform(buffer, chunkSize)
     cSize = cSize - readFrames
     print('discard frames dict ', cSize)
     buffer:read(cSize)
- --   id, nodeId, rId, layerId, nFrames
     return MVTransform{
         nodeId = nodeId,
         nodeAttr = attr,
@@ -194,6 +206,48 @@ function voxUtil.readMaterial(buffer, chunkSize)
     
 end
 
+function voxUtil.validateVersion(buffer)
+    local chunk = buffer:read(8)
+    local VOX_,version = struct.unpack('<c4i', chunk)
+    return VOX_ == 'VOX ' and version == 150
+end
+
+function voxUtil.assertMainChunk(buffer)
+    -- MAIN chunk
+    local chunk = buffer:read(4)
+    assert(struct.unpack('<c4',chunk) == 'MAIN')
+    chunk = buffer:read(8)
+    local N, M = struct.unpack('<ii', chunk)
+    assert (N == 0, 'MAIN chunk should have no content')
+    return M
+end
+
+-- Validate .vox file MAIN Chunk.
+-- attempts to return the content size of the main chuck
+-- if succeeds, returns one M, of the content size
+-- if failed, returns a false and an error message
+function voxUtil.validateMainChunk(buffer)
+    local chunk = buffer:read(4)
+    if not (struct.unpack('<c4',chunk) == 'MAIN') then
+        return false, 'Missing main chunk'
+    end
+    chunk = buffer:read(8)
+    local N, M = struct.unpack('<ii', chunk)
+    if N ~= 0 then
+        return false, 'MAIN chunk should have no content'
+    end
+    return tonumber(M)
+end
+
+function voxUtil.readHeaderData(buffer)
+    chunk = buffer:read(12)
+    if chunk == nil then
+        -- end of file
+        return 'EOF'
+    end
+    local chunkName, chunkSize, childSize = struct.unpack('<c4ii', chunk)
+    return chunkName, chunkSize, childSize
+end
 function voxUtil.processVoxFile(opt)
     -- props
     opt = opt or {}
@@ -220,28 +274,21 @@ function voxUtil.processVoxFile(opt)
     local currentFrame = 0
     local x, y, z = 0,0,0
     local nModels = 0
-    -- assert is VOX 150 fil()e
-    local chunk = buffer:read(8)
-    local VOX_,version = struct.unpack('<c4i', chunk)
+    local chunk = nil
+    -- assert is VOX 150 file
     assert(
-    VOX_ == 'VOX ' and version == 150,
+    voxUtil.validateVersion(buffer),
     'Invalid Version'
     )
+    local contentSize = voxUtil.assertMainChunk(buffer)
+    dLog('Content Size ', contentSize )
     
-    -- MAIN chunk
-    chunk = buffer:read(4)
-    assert(struct.unpack('<c4',chunk) == 'MAIN')
-    chunk = buffer:read(8)
-    local N, M = struct.unpack('<ii', chunk)
-    dLog('Content Size ', M)
-    assert (N == 0, 'MAIN chunk should have no content')
     
     
     while true do
         -- read header
         chunk = buffer:read(12)
         if chunk == nil then break end -- end of file
-        
         local chunkName, chunkSize, childSize = struct.unpack('<c4ii', chunk)
         dLog(
         string.format(
@@ -302,12 +349,12 @@ function voxUtil.processVoxFile(opt)
             )
      elseif chunkName == 'nTRN' then
          dLog(voxUtil.readTransform(buffer, chunkSize))
-        elseif chunkName == 'nGRP' then
+    elseif chunkName == 'nGRP' then
         dLog('Group: ', voxUtil.readNodeGroup(buffer, chunkSize))
-        else
+    else
             chunk = buffer:read(chunkSize)
             print(chunkName .. ' not implemented, skipping')
-        end
+    end
         dLog('======')
     end
     
@@ -318,6 +365,7 @@ function voxUtil.processVoxFile(opt)
     end
     
     assert(#volumes > 0, 'failed to load voxels')
+    buffer:close()
     return {
     size = vec3(x, y, z),
     volumes = volumes,

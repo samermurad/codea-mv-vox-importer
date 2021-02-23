@@ -15,4 +15,4 @@ var|type|comment
 entity|craft.entity| parent, required
 filePath|string| path to the .vox file to import
 
-method runs synchronosuly
+method runs synchronosuly, loads array of craft.volume entities

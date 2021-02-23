@@ -8,6 +8,7 @@
 		<string>voxUtil</string>
 		<string>struct</string>
 		<string>voxComps</string>
+		<string>VoxLoader</string>
 	</array>
 	<key>Dependencies</key>
 	<array>
