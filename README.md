@@ -1,7 +1,7 @@
 # MVVoxImporter
 
 Tool for conerting Megical Voxel `.vox` files to codea volume models.
-works well with the Voxel Max App.
+works well with the [Voxel Max App](https://voxelmax.com/) for iOS/iPadOS.
 
 Implementation of buffer reading is based on the `.vox` File format definition, more info can be found in the [voxel-model](https://github.com/ephtracy/voxel-model) repo
 
