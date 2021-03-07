@@ -3,7 +3,7 @@
 Tool for conerting Megical Voxel `.vox` files to codea volume models.
 works well with the Voxel Max App.
 
-Implementation of buffer reading is based on the `.vox` File format definition, more info can be found in [voxel-model](the https://github.com/ephtracy/voxel-model) repo
+Implementation of buffer reading is based on the `.vox` File format definition, more info can be found in the [voxel-model](https://github.com/ephtracy/voxel-model) repo
 
 > NOTE: Work in progress, initial logic is working
 
