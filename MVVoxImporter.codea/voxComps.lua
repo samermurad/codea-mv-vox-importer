@@ -8,6 +8,13 @@ function MVTransform:init(opt)
     self.layerId = opt.layerId
     self.numFrames = opt.numFrames
     self.frames = opt.frames
+    if self.numFrames > 0 then
+        local first = self.frames['_t']
+        self.position = first
+    else
+        print('nope')
+        self.position = vec3(0,0,0)
+    end
 end
 
 

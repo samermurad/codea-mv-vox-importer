@@ -7,6 +7,7 @@ VL_BUILDING_CHUNK = 'VL_BUILDING_CHUNK'
 VL_PROCESSING = 'VL_PROCESSING'
 VL_INFLATING = 'VL_INFLATING'
 VL_ERROR ='VL_ERROR'
+VL_DONE = 'VL_DONE'
 function VoxLoader:init(opt)
   --  self.thread =
     self.status = VL_IDLE
@@ -21,13 +22,12 @@ function VoxLoader:process(opt)
         coroutine.yield(VL_ERROR, 'Missing .vox file, must provide opt.filePath')
         return
     end
-
+    
     local filePath = opt.filePath
     local spacing = opt.spacing or 1
     local size = opt.size or 1
     local loadFrame = opt.loadFrame or 0
     local useDefaultPalette = opt.useDefaultPalette or false
-    
     -- debug
     local verbose = opt.debug or false
     local function dLog(...)
@@ -46,14 +46,10 @@ function VoxLoader:process(opt)
     end
 
     -- setup variables
-    local volumes = {}
-    local voxels = nil
-    local palette = nil
-    local transforms = {}
-    local currentFrame = 0
-    local x, y, z = 0,0,0
-    local nModels = 0
-    local chunk = nil
+    local store = {
+        models = {},
+        palette = nil
+    }
 
     if not voxUtil.validateVersion(buffer) then
         coroutine.yield(VL_ERROR, 'Invalid file version: Must be "VOX 150"')
@@ -77,7 +73,7 @@ function VoxLoader:process(opt)
             chunkSize = chunkSize
         })
 
-        if chunkName == 'EOF' then
+        if chunkName == EOF then
             -- END OF FILE
             break
         end
@@ -92,31 +88,64 @@ function VoxLoader:process(opt)
             coroutine.yield(VL_ERROR, 'broken pipeline, file might be corrupted')
             return 
         end
-        
+        -- get routine for chunk
+        local routine = voxUtil.getRoutineForChunk(chunkName)
+        if routine then
+            local isDone,data
+            local routineId = coroutine.create(routine)
+            while coroutine.status(routineId) == 'suspended' do
+                isDone, data = coroutine.resume(routineId, buffer, chunkName, chunkSize)
+                coroutine.yield(VL_PROCESSING, chunkName)
+            end
+            -- storing results
+            if chunkName == 'RGBA' then
+                store.palette = data
+            end
 
-        chunk = buffer:read(chunkSize)
-        print(chunkName .. ' not implemented, skipping')
+            if chunkName == 'SIZE' then
+                -- add model to models array
+                table.insert(store.models, { size = data })
+            end
+            if chunkName == 'XYZI' then
+                -- update coordinates on last added model
+                local ln = #store.models
+                store.models[ln].voxels = data
+                print('XYZI', #store.models)
+            end
+            if chunkName == 'nTRN' then
+                local ln = #store.models
+                store.models[ln].transform = data
+            end
+        else
+            chunk = buffer:read(chunkSize)
+            print('"' ..chunkName .. '" chunk is not implemented, skipping')
+        end
+        
     end
     
-    coroutine.yield(VL_PROCESSING)
+    -- close buffer
+    buffer:close()
 
-    
+    return VL_DONE, store
 end
 
 function VoxLoader:runThread(data)
     if self.thread then
-        local co, vl_status, data = coroutine.resume(self.thread, self, data)
+        local co, vl_status, res = coroutine.resume(self.thread, self, data)
         local status = coroutine.status(self.thread)
         if status == 'suspended' then
-            print('loop', co, vl_status, data)
+         --   print('loop', co, vl_status, data)
         end
         if status == 'dead' then
-            print('VoxLoader done, data: ', vl_status, data)
+            print('VoxLoader done, data: ', vl_status, res)
             self.status = vl_status
             if vl_status == VL_ERROR then
-                self.error = data
+                self.error = res
             end
             self.thread = nil
+            if self.onDone then
+                self.onDone(vl_status, res)
+            end
         end
         return vl_status, data
     end
@@ -126,8 +155,9 @@ function VoxLoader:tick()
     return self:runThread()
 end
 
-function VoxLoader:load(opt)
+function VoxLoader:load(opt, onDone)
     assert(self.thread == nil, 'Trying to queue load before previous is done')
+    self.onDone = onDone
     self.thread = coroutine.create(self.process, opt)
     return self:runThread(opt)
 end
