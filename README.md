@@ -9,6 +9,10 @@ Implementation of buffer reading is based on the `.vox` File format definition, 
 
 
 
+## Example Image
+
+![Codea app on the left, VoxelMax app on the right, model built with VoxelMax, imported into Codea](https://raw.githubusercontent.com/samermurad/codea-mv-vox-importer/main/ExampleScreenshot.png)
+
 ## Basic Usage
 
 ```lua
